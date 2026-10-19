@@ -29,9 +29,11 @@ import forms
 import admin_api
 import campaigns
 import extras
+import workflow
 import sms
 import mailer
 import pdfgen
+import seal
 import preview
 
 # ---------------------------------------------------------------- config
@@ -245,6 +247,7 @@ def _init_db_locked():
     campaigns.init_db(conn)  # client lists and email campaigns
     admin_api.init_db(conn)  # Admin Console links
     extras.init_db(conn)  # trial, branding, reminders, texts, password resets
+    workflow.init_db(conn)  # second owners, client files, bundles, signature boxes
     conn.commit()
     conn.close()
 
@@ -719,7 +722,7 @@ def company_storage_bytes(company_id):
                         files.add((UPLOAD_DIR, f))
         except (ValueError, AttributeError):
             pass
-    total = 0
+    total = client_upload_bytes(company_id)   # photos and files clients sent
     for folder, f in files:
         try:
             total += os.path.getsize(os.path.join(folder, os.path.basename(f)))
@@ -1264,9 +1267,15 @@ def new_packet():
                                    selected=[int(x) for x in request.form.getlist("template_ids") if x.isdigit()])
         ids = [int(x) for x in request.form.getlist("template_ids") if x.isdigit()]
         ids = [i for i in ids if i in {t["id"] for t in templates}]  # only this company's forms
+        extra_problem = validate_packet_extras(request.form)
+        if extra_problem:
+            flash(extra_problem, "error")
+            return render_template("packet_new.html", templates=templates, form=request.form, selected=ids)
         adhoc = [f for f in request.files.getlist("adhoc_files") if f and f.filename]
         has_approvals = bool(request.form.getlist("layout_ids") or request.form.getlist("drawing_ids"))
-        if not name or "@" not in email or not (ids or adhoc or has_approvals):
+        in_person = request.form.get("action") == "in_person"
+        email_ok = "@" in email or (in_person and not email)   # no email needed when they sign here, now
+        if not name or not email_ok or not (ids or adhoc or has_approvals):
             flash("Add the client's name, a valid email, and at least one form, file or approval.", "error")
             return render_template("packet_new.html", templates=templates, form=request.form,
                                    selected=ids)
@@ -1324,7 +1333,10 @@ def new_packet():
         if uploads:
             parts.append(f"{len(uploads)} one-off file(s)")
         log_event(pid, "created", ", ".join(parts) + (f" · by {actor()}" if actor() else ""))
+        after_packet_created(pid)   # second owner, file request, signature boxes
         db().commit()
+        if in_person:
+            return start_in_person(pid)
         if phone and request.form.get("text_link") == "on" and sms.enabled():
             text_packet(pid)
         if request.form.get("action") == "send_email" and mailer.enabled():
@@ -1333,7 +1345,8 @@ def new_packet():
         flash("Packet ready. Copy the signing link below and send it to your client.", "ok")
         return redirect(url_for("packet_detail", pid=pid))
     pre = [int(x) for x in request.args.getlist("t") if x.isdigit()]
-    return render_template("packet_new.html", templates=templates, form={}, selected=pre)
+    return render_template("packet_new.html", templates=templates, form=packet_form_defaults(),
+                           selected=bundle_selection(pre))
 
 
 def mark_sent(pid, how):
@@ -1358,6 +1371,7 @@ def send_packet_email(pid):
         db().execute("UPDATE packets SET last_reminder_at=? WHERE id=?", (now(), pid))  # restarts the reminder clock
         mark_sent(pid, "email")
         flash(f"Sent to {p['client_email']}.", "ok")
+        notify_cosigners(pid, "email")
     except Exception as exc:  # noqa: BLE001
         log_event(pid, "email_failed", str(exc)[:200])
         db().commit()
@@ -1507,7 +1521,8 @@ def admin_audit_pdf(pid):
     items = db().execute("SELECT * FROM packet_items WHERE packet_id=? ORDER BY position", (pid,)).fetchall()
     events = db().execute("SELECT * FROM events WHERE packet_id=? ORDER BY at, id", (pid,)).fetchall()
     path = os.path.join(SIGNED_DIR, f"audit-{pid}-{secrets.token_hex(4)}.pdf")
-    pdfgen.audit_trail(path, biz(), dict(p), [dict(i) for i in items], [dict(e) for e in events])
+    pdfgen.audit_trail(path, biz(), dict(p), [cosign_names(dict(i)) for i in items], [dict(e) for e in events])
+    seal.seal_pdf(path, DATA_DIR, biz(), reason=f"Audit trail · {packet_ref(p)}", location=PLATFORM_NAME)
     return send_file(path, mimetype="application/pdf", download_name=f"audit-trail-{pid}.pdf")
 
 
@@ -1567,6 +1582,69 @@ def client_confirm(token):
         db().commit()
         complete_packet(p["id"], reason="client confirmed receipt")
     return redirect(url_for("client_done", token=token))
+
+
+def render_item_pdf(p, it, answers, signers, method=""):
+    """Write the signed PDF of one packet item and seal it. `signers` is the client, plus the second owner when
+    two owners sign: [{"name", "sig_path", "signed_at", "ip", "user_agent", "label", "email"}].
+    Returns (file name, SHA-256 of the file)."""
+    fields = json.loads(it["fields_json"] or "[]")
+    body = it["template_body"] or ""
+    is_specs = it["template_kind"] == "specs"
+    approval = it["template_kind"] if it["template_kind"] in ("layout", "drawing") else None
+    config = json.loads(it["config_json"] or "{}")
+    first = signers[0]
+    try:
+        placements = json.loads(it["placements_json"] or "[]")
+    except (ValueError, IndexError, KeyError):
+        placements = []
+    out_name = f"{p['id']}-{it['id']}-{secrets.token_hex(6)}.pdf"
+    out_path = os.path.join(SIGNED_DIR, out_name)
+    meta = {"business": biz(), "packet_ref": packet_ref(p), "client_name": p["client_name"],
+            "client_email": p["client_email"], "signer_name": first["name"], "signed_at": first["signed_at"],
+            "ip": first.get("ip"), "user_agent": first.get("user_agent"), "method": method,
+            "form_name": it["template_name"], "original_sha256": it["template_sha256"],
+            "so_number": p["so_number"] or ""}
+    if len(signers) > 1:
+        meta["signers"] = signers
+    source = (os.path.join(UPLOAD_DIR, it["template_file"])
+              if it["template_kind"] in ("pdf", "drawing") else None)
+    if it["template_kind"] == "file":
+        v = item_viewer(it)
+        if v["mode"] == "pages":
+            source = os.path.join(UPLOAD_DIR, v["pdf"])  # signed copy shows the document's pages
+    approval_info = None
+    if approval:
+        approval_info = {"kind": approval, "decision": answers["decision"],
+                         "label": decision_label(approval, answers), "comments": answers["comments"],
+                         "negative": decision_is_negative(approval, answers), "config": config}
+        if approval == "layout":
+            approval_info["options"] = [dict(o, path=os.path.join(UPLOAD_DIR, option_display(o)[0]))
+                                        for o in config.get("options", [])]
+    attachment = None
+    if it["template_kind"] == "file":
+        fpath = os.path.join(UPLOAD_DIR, it["template_file"])
+        attachment = {"name": it["file_name"] or it["template_name"], "type": filetype_label(it["file_name"]),
+                      "size": os.path.getsize(fpath), "sha256": it["template_sha256"],
+                      "image": fpath if (it["file_mime"] or "").startswith("image/") else None}
+    try:
+        pdfgen.signed_document(out_path, source, body, fields, answers, first["sig_path"], meta,
+                           placements=placements, local_day=fmt_day,
+                               specs=answers if is_specs else None, attachment=attachment,
+                               approval=approval_info)
+    except Exception:  # noqa: BLE001
+        if not (approval_info and approval_info.get("options")):
+            raise
+        # A picture the PDF library can't embed must not lose the client's decision:
+        # record it without the pictures (they stay available as files).
+        app.logger.exception("Layout pictures could not be embedded; signing without them")
+        for o in approval_info["options"]:
+            o["path"] = None
+        pdfgen.signed_document(out_path, source, body, fields, answers, first["sig_path"], meta,
+                           placements=placements, local_day=fmt_day,
+                               approval=approval_info)
+    seal.seal_pdf(out_path, DATA_DIR, biz(), reason=f"Signed electronically · {packet_ref(p)}", location=PLATFORM_NAME)
+    return out_name, sha256_file(out_path)
 
 
 @app.route("/s/<token>/f/<int:iid>", methods=["GET", "POST"])
@@ -1639,48 +1717,11 @@ def client_form(token, iid):
             sig_path = os.path.join(SIGNED_DIR, sig_name)
             with open(sig_path, "wb") as fh:
                 fh.write(sig_bytes)
-            out_name = f"{p['id']}-{iid}-{secrets.token_hex(6)}.pdf"
-            out_path = os.path.join(SIGNED_DIR, out_name)
-            meta = {"business": biz(), "packet_ref": packet_ref(p), "client_name": p["client_name"],
-                    "client_email": p["client_email"], "signer_name": signer, "signed_at": ts,
-                    "ip": client_ip(), "user_agent": request.headers.get("User-Agent", "")[:300],
-                    "form_name": it["template_name"], "original_sha256": it["template_sha256"],
-                    "so_number": p["so_number"] or ""}
-            source = (os.path.join(UPLOAD_DIR, it["template_file"])
-                      if it["template_kind"] in ("pdf", "drawing") else None)
-            if it["template_kind"] == "file":
-                v = item_viewer(it)
-                if v["mode"] == "pages":
-                    source = os.path.join(UPLOAD_DIR, v["pdf"])  # signed copy shows the document's pages
-            approval_info = None
-            if approval:
-                approval_info = {"kind": approval, "decision": answers["decision"],
-                                 "label": decision_label(approval, answers), "comments": answers["comments"],
-                                 "negative": decision_is_negative(approval, answers), "config": config}
-                if approval == "layout":
-                    approval_info["options"] = [dict(o, path=os.path.join(UPLOAD_DIR, option_display(o)[0]))
-                                                for o in config.get("options", [])]
-            attachment = None
-            if it["template_kind"] == "file":
-                fpath = os.path.join(UPLOAD_DIR, it["template_file"])
-                attachment = {"name": it["file_name"] or it["template_name"], "type": filetype_label(it["file_name"]),
-                              "size": os.path.getsize(fpath), "sha256": it["template_sha256"],
-                              "image": fpath if (it["file_mime"] or "").startswith("image/") else None}
-            try:
-                pdfgen.signed_document(out_path, source, body, fields, answers, sig_path, meta,
-                                       specs=answers if is_specs else None, attachment=attachment,
-                                       approval=approval_info)
-            except Exception:  # noqa: BLE001
-                if not (approval_info and approval_info.get("options")):
-                    raise
-                # A picture the PDF library can't embed must not lose the client's decision:
-                # record it without the pictures (they stay available as files).
-                app.logger.exception("Layout pictures could not be embedded; signing without them")
-                for o in approval_info["options"]:
-                    o["path"] = None
-                pdfgen.signed_document(out_path, source, body, fields, answers, sig_path, meta,
-                                       approval=approval_info)
-            digest = sha256_file(out_path)
+            signers = [{"name": signer, "sig_path": sig_path, "signed_at": ts, "ip": client_ip(),
+                        "user_agent": request.headers.get("User-Agent", "")[:300], "label": "Signature",
+                        "email": p["client_email"]}]
+            out_name, digest = render_item_pdf(p, it, answers, signers, method=signing_method(p))
+            meta = {"ip": signers[0]["ip"], "user_agent": signers[0]["user_agent"]}
             db().execute(
                 "UPDATE packet_items SET answers_json=?, signer_name=?, signature_path=?, signed_at=?, "
                 "signed_pdf_path=?, signed_sha256=?, ip=?, user_agent=? WHERE id=? AND signed_at IS NULL",
@@ -1691,8 +1732,9 @@ def client_form(token, iid):
             signed, total = packet_progress(p["id"])
             db().commit()
             if signed == total:
-                complete_packet(p["id"])
-                return redirect(url_for("client_done", token=token))
+                if maybe_complete(p["id"]):   # also waits for a second owner and any required files
+                    return redirect(url_for("client_done", token=token))
+                return redirect(url_for("client_packet", token=token))
             nxt = db().execute("SELECT id FROM packet_items WHERE packet_id=? AND signed_at IS NULL "
                                "AND requires_signature=1 ORDER BY position",
                                (p["id"],)).fetchone()
@@ -1739,8 +1781,12 @@ def complete_packet(pid, reason="all forms signed"):
         files += [(i["file_name"], os.path.join(UPLOAD_DIR, i["template_file"])) for i in items
                   if i["template_kind"] == "file" or (not i["requires_signature"] and i["template_file"])]
         try:
-            mailer.send_completed(p["client_email"], p["client_name"], biz(), packet_ref(p), files,
-                                  admin_link=None)
+            if "@" in (p["client_email"] or ""):
+                mailer.send_completed(p["client_email"], p["client_name"], biz(), packet_ref(p), files,
+                                      admin_link=None)
+            for cs in db().execute("SELECT name, email FROM packet_signers WHERE packet_id=?", (pid,)).fetchall():
+                if "@" in (cs["email"] or ""):
+                    mailer.send_completed(cs["email"], cs["name"], biz(), packet_ref(p), files, admin_link=None)
             for to in staff_recipients(p):
                 mailer.send_completed(to, p["client_name"], biz(), packet_ref(p), files,
                                       admin_link=(BASE_URL or "") + url_for("packet_detail", pid=pid))
@@ -1853,6 +1899,7 @@ def security_headers(resp):
 campaigns.register(__import__("sys").modules[__name__])
 admin_api.register(__import__("sys").modules[__name__])
 extras.register(__import__("sys").modules[__name__])
+workflow.register(__import__("sys").modules[__name__])
 
 
 if __name__ == "__main__":

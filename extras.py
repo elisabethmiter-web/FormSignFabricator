@@ -201,6 +201,7 @@ def register(A):
     def extras_before():
         if not state["base"] and request.url_root:
             state["base"] = request.url_root.rstrip("/")   # for links in background emails when BASE_URL is empty
+            A.BACKGROUND_BASE = state["base"]
         if state["thread"] is None and not app.config.get("EXTRAS_NO_THREAD"):
             state["thread"] = threading.Thread(target=_loop, daemon=True, name="reminders")
             state["thread"].start()
@@ -225,6 +226,8 @@ def register(A):
                 with app.app_context():
                     expire_trials(db())
                     run_reminders(db())
+                    if hasattr(A, "run_cosigner_reminders"):
+                        A.run_cosigner_reminders(db())
             except Exception:  # noqa: BLE001
                 app.logger.exception("Background reminders check failed; will try again")
             time.sleep(CHECK_SECONDS)
@@ -387,6 +390,8 @@ def register(A):
         A.log_event(pid, "sent", f"by text to {sms.pretty(p['client_phone'])} · by {A.actor()}")
         db().commit()
         flash(f"Texted to {sms.pretty(p['client_phone'])}.", "ok")
+        if hasattr(A, "notify_cosigners"):
+            A.notify_cosigners(pid, "text")
         return True
 
     A.text_packet = text_packet
