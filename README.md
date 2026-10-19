@@ -136,8 +136,8 @@ The client reads every document right above where they sign:
 
 On **New packet → Approvals**:
 
-- **+ Layout approval (2 options)**: upload a picture for Option A and Option B (JPG, PNG, WebP or GIF) and optional notes. The client sees both side by side and must choose **Proceed with Option A**, **Proceed with Option B** or **Refuse both options** (a reason is required when refusing), then signs. Made for stone and seam layouts.
-- **+ Drawing approval (PDF)**: upload the revised drawing, an optional revision label (e.g. Rev 3) and a note of what changed. The client reviews it and chooses **Approve the drawing as shown** or **Request changes** (what to change is required), then signs.
+- **Stone & seam layout → + Add layout approval (Option A / B)**: upload a picture for Option A and Option B (JPG, PNG, WebP or GIF) and optional notes. The client sees both side by side and must choose **Proceed with Option A**, **Proceed with Option B** or **Refuse both options** (a reason is required when refusing), then signs. Made for stone and seam layouts.
+- **Template drawing (revisions) → + Add template drawing (PDF)**, a separate section: upload the template drawing, its revision (Rev 1 for the first drawing, Rev 2 for the next, and so on) and a note of what changed. The client reviews it and chooses **Approve the template drawing as shown** or **Request changes** (what to change is required), then signs.
 - The signed PDF shows the decision in a coloured box: for layouts both pictures with the chosen one highlighted; for drawings every page is stamped "APPROVED" or "CHANGES REQUESTED" with the client's name and date.
 - Refusals and change requests are flagged in red on the packet page and on the dashboard so you know to send a revised version.
 - Add up to 10 approvals per packet, alongside library forms and one-off files.

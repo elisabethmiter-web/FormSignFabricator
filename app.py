@@ -1078,7 +1078,7 @@ def collect_approvals():
     for n in request.form.getlist("layout_ids")[:10]:
         if not n.isdigit():
             continue
-        title = request.form.get(f"layout_title_{n}", "").strip()[:120] or "Layout approval"
+        title = request.form.get(f"layout_title_{n}", "").strip()[:120] or "Stone & seam layout approval"
         opts = []
         for key in ("a", "b"):
             f = request.files.get(f"layout_{key}_{n}")
@@ -1102,7 +1102,7 @@ def collect_approvals():
     for n in request.form.getlist("drawing_ids")[:10]:
         if not n.isdigit():
             continue
-        title = request.form.get(f"drawing_title_{n}", "").strip()[:120] or "Drawing approval"
+        title = request.form.get(f"drawing_title_{n}", "").strip()[:120] or "Template drawing approval"
         f = request.files.get(f"drawing_file_{n}")
         if not f or not f.filename:
             raise ValueError(f"“{title}”: add the drawing PDF.")

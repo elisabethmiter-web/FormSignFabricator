@@ -33,12 +33,12 @@
   </section>
   {% elif approval == 'drawing' %}
   <section class="panel">
-    <div class="panel-head"><h2>Review the drawing{% if config.revision %} · {{ config.revision }}{% endif %}</h2><a class="small" href="{{ url_for('client_doc', token=p.token, iid=it.id) }}" target="_blank" rel="noopener">Open in a new tab</a></div>
+    <div class="panel-head"><h2>Review the template drawing{% if config.revision %} · {{ config.revision }}{% endif %}</h2><a class="small" href="{{ url_for('client_doc', token=p.token, iid=it.id) }}" target="_blank" rel="noopener">Open in a new tab</a></div>
     {% if config.changes %}<div class="note-box"><span class="eyebrow">What changed</span><div style="white-space:pre-wrap">{{ config.changes }}</div></div>{% endif %}
     {% include "_doc_view.html" %}
     <div class="drawing-choices">
-      <label class="decision-choice pos" for="decision_approved"><input type="radio" id="decision_approved" name="decision" value="approved" {{ 'checked' if answers.get('decision')=='approved' }}> <span><strong>Approve the drawing as shown</strong></span></label>
-      <label class="decision-choice neg" for="decision_changes"><input type="radio" id="decision_changes" name="decision" value="changes" {{ 'checked' if answers.get('decision')=='changes' }}> <span><strong>Request changes</strong><br><span class="muted small">The drawing is not approved; we'll revise it.</span></span></label>
+      <label class="decision-choice pos" for="decision_approved"><input type="radio" id="decision_approved" name="decision" value="approved" {{ 'checked' if answers.get('decision')=='approved' }}> <span><strong>Approve the template drawing as shown</strong></span></label>
+      <label class="decision-choice neg" for="decision_changes"><input type="radio" id="decision_changes" name="decision" value="changes" {{ 'checked' if answers.get('decision')=='changes' }}> <span><strong>Request changes</strong><br><span class="muted small">Not approved yet. We'll send you a revised drawing.</span></span></label>
     </div>
     {% if errors.get('decision') %}<span class="field-error">{{ errors.decision }}</span>{% endif %}
     <div class="{{ 'has-error' if errors.get('comments') }}">

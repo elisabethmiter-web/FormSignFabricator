@@ -344,7 +344,7 @@ def signed_document(out_path, source_pdf, body, fields, answers, sig_path, meta,
         story += _layout_story(approval)
     elif approval and approval["kind"] == "drawing":
         cfg = approval["config"]
-        story += [_p(f"Drawing approval{(' · ' + cfg['revision']) if cfg.get('revision') else ''}. "
+        story += [_p(f"Template drawing approval{(' · ' + cfg['revision']) if cfg.get('revision') else ''}. "
                      f"The drawing appears on the preceding pages.", BODY)]
         if cfg.get("changes"):
             story += [_p("Changes in this revision", H2), _p(cfg["changes"])]

@@ -3,7 +3,7 @@
 {% block wrapclass %}narrow{% endblock %}
 {% block content %}
 <div class="page-head"><div><a href="{{ url_for('dashboard') }}" class="small">← Packets</a><h1>New signing packet</h1>
-<p class="muted">Pick saved forms, add one-off files, or ask for layout and drawing approvals. The client goes through them in order.</p></div></div>
+<p class="muted">Pick saved forms, add one-off files, ask for a stone &amp; seam layout choice, or send a template drawing for approval. The client goes through them in order.</p></div></div>
 <form method="post" class="panel" id="packet-form" enctype="multipart/form-data">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
 
@@ -37,7 +37,7 @@
     {% if not templates %}<p class="muted small">Your library is empty. <a href="{{ url_for('library') }}">Add forms you reuse</a>, or use one-off files and approvals below.</p>{% endif %}
     {% for t in templates %}
       <label class="pick"><input type="checkbox" name="template_ids" value="{{ t.id }}" {{ 'checked' if t.id in selected }}>
-        <span><strong style="font-weight:600">{{ t.name }}</strong><br><span class="muted small">{{ t.file_name|filetype if t.kind in ('pdf','file') and t.file_name else {'pdf':'PDF document','file':'File','form':'Fillable form','specs':'Room-by-room spec form','layout':'Layout approval','drawing':'Drawing approval'}[t.kind] }}</span></span>
+        <span><strong style="font-weight:600">{{ t.name }}</strong><br><span class="muted small">{{ t.file_name|filetype if t.kind in ('pdf','file') and t.file_name else {'pdf':'PDF document','file':'File','form':'Fillable form','specs':'Room-by-room spec form','layout':'Stone & seam layout','drawing':'Template drawing'}[t.kind] }}</span></span>
         <span class="order"></span></label>
     {% endfor %}
     </div>
@@ -51,18 +51,21 @@
     </label>
     <div id="adhoc-list" class="adhoc-list"></div>
   </div>
-  <div class="stack approvals" style="gap:10px">
-    <div class="stack" style="gap:2px"><strong style="font-weight:500">Approvals <span class="hint">Optional</span></strong>
-      <span class="muted small">Ask the client to choose between two stone or seam layouts, or to approve a revised drawing. The pictures and drawings are for this packet only.</span></div>
-    <div id="approval-list" class="stack" style="gap:10px"></div>
-    <div class="row">
-      <button type="button" class="btn" id="add-layout">+ Layout approval (2 options)</button>
-      <button type="button" class="btn" id="add-drawing">+ Drawing approval (PDF)</button>
-    </div>
+  <div class="stack approvals approval-section" style="gap:10px">
+    <div class="stack" style="gap:2px"><strong style="font-weight:500">Stone &amp; seam layout <span class="hint">Optional</span></strong>
+      <span class="muted small">The client chooses between two layouts (Option A or B) or refuses both. The pictures are for this packet only.</span></div>
+    <div id="layout-list" class="stack approval-list" style="gap:10px"></div>
+    <div><button type="button" class="btn" id="add-layout">+ Add layout approval (Option A / B)</button></div>
+  </div>
+  <div class="stack approvals approval-section" style="gap:10px">
+    <div class="stack" style="gap:2px"><strong style="font-weight:500">Template drawing (revisions) <span class="hint">Optional</span></strong>
+      <span class="muted small">Send the template drawing for approval. Each time you send an updated drawing, give it the next revision (Rev 1, Rev 2…) and say what changed. The client approves it or requests changes.</span></div>
+    <div id="drawing-list" class="stack approval-list" style="gap:10px"></div>
+    <div><button type="button" class="btn" id="add-drawing">+ Add template drawing (PDF)</button></div>
   </div>
   <template id="tpl-layout">
     <fieldset class="approval-card" data-kind="layout">
-      <legend><span class="tag tag-layout">Layout approval</span></legend>
+      <legend><span class="tag tag-layout">Stone &amp; seam layout</span></legend>
       <input type="hidden" name="layout_ids" value="__N__">
       <label for="layout_title___N__">Title <span class="hint">What the client sees</span><input id="layout_title___N__" type="text" name="layout_title___N__" value="Stone & seam layout approval"></label>
       <div class="grid-2">
@@ -75,14 +78,14 @@
   </template>
   <template id="tpl-drawing">
     <fieldset class="approval-card" data-kind="drawing">
-      <legend><span class="tag tag-drawing">Drawing approval</span></legend>
+      <legend><span class="tag tag-drawing">Template drawing</span></legend>
       <input type="hidden" name="drawing_ids" value="__N__">
       <div class="grid-2">
-        <label for="drawing_title___N__">Title<input id="drawing_title___N__" type="text" name="drawing_title___N__" value="Drawing approval"></label>
-        <label for="drawing_rev___N__">Revision <span class="hint">Optional, e.g. Rev 3</span><input id="drawing_rev___N__" type="text" name="drawing_rev___N__"></label>
+        <label for="drawing_title___N__">Title <span class="hint">What the client sees</span><input id="drawing_title___N__" type="text" name="drawing_title___N__" value="Template drawing approval"></label>
+        <label for="drawing_rev___N__">Revision <span class="hint">e.g. Rev 1 for the first drawing, Rev 2 for the next</span><input id="drawing_rev___N__" type="text" name="drawing_rev___N__" placeholder="Rev 1"></label>
       </div>
-      <label for="drawing_file___N__">Drawing (PDF)<input id="drawing_file___N__" type="file" name="drawing_file___N__" accept="application/pdf" required></label>
-      <label for="drawing_changes___N__">What changed in this version <span class="hint">Shown to the client above the drawing</span><textarea id="drawing_changes___N__" name="drawing_changes___N__" rows="3" placeholder="e.g. Moved sink 4&quot; left, added 1.5&quot; overhang on island"></textarea></label>
+      <label for="drawing_file___N__">Template drawing (PDF)<input id="drawing_file___N__" type="file" name="drawing_file___N__" accept="application/pdf" required></label>
+      <label for="drawing_changes___N__">What changed in this revision <span class="hint">Shown to the client above the drawing. Leave empty for the first drawing.</span><textarea id="drawing_changes___N__" name="drawing_changes___N__" rows="3" placeholder="e.g. Moved sink 4&quot; left, added 1.5&quot; overhang on island"></textarea></label>
       <div><button type="button" class="btn btn-quiet btn-danger small remove-approval">Remove</button></div>
     </fieldset>
   </template>
@@ -126,10 +129,12 @@
 </script>
 <script>
 (function(){
-  const list=document.getElementById('approval-list'); if(!list) return;
+  const lists={layout:document.getElementById('layout-list'), drawing:document.getElementById('drawing-list')};
+  if(!lists.layout) return;
   let n=0;
   function add(kind){
-    if(list.querySelectorAll('.approval-card').length>=10) return;
+    const list=lists[kind];
+    if(document.querySelectorAll('.approval-card').length>=10) return;
     const html=document.getElementById('tpl-'+kind).innerHTML.replaceAll('__N__', String(++n));
     const wrap=document.createElement('div'); wrap.innerHTML=html; const card=wrap.firstElementChild;
     card.querySelector('.remove-approval').addEventListener('click',()=>card.remove());

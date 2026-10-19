@@ -391,3 +391,4 @@ textarea#body { font-family: var(--font-body); line-height: 1.5; }
 .bundle-edit > summary { list-style: none; }
 .bundle-edit > summary::-webkit-details-marker { display: none; }
 .bundle-edit[open] { flex-basis: 100%; }
+.approval-section { border-top: 1px solid var(--rule); padding-top: 14px; }
