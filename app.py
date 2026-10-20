@@ -576,7 +576,7 @@ def signup():
         else:
             new_cid = db().execute("INSERT INTO companies (name, notify_email, storage_gb, source, created_at) "
                                    "VALUES (?,?,?,?,?)", (company, email, INCLUDED_STORAGE_GB, "signup", now())).lastrowid
-            extras.start_trial(db(), new_cid)  # self sign-up starts a free trial that pauses on its own
+            extras.start_trial(db(), new_cid)  # self sign-up starts a 14-day demo that locks on its own
             h = generate_password_hash(pw)
             uid = db().execute("INSERT INTO users (name, email, password_hash, role, must_change_password, created_at, "
                                "company_id) VALUES (?,?,?,?,0,?,?)", (name, email, h, "manager", now(), new_cid)).lastrowid
@@ -585,7 +585,7 @@ def signup():
             session.clear()
             session["uid"], session["pwv"] = uid, h[-12:]
             session.permanent = True
-            flash(f"Welcome to {PLATFORM_NAME}. Your {extras.TRIAL_DAYS}-day free trial has started. Add your forms "
+            flash(f"Welcome to {PLATFORM_NAME}. Your {extras.TRIAL_DAYS}-day demo has started. Add your forms "
                   f"to the library, then add your team under Team.", "ok")
             return redirect(url_for("library"))
     return render_template("signup.html", form=form)
@@ -787,6 +787,8 @@ def platform():
                                    "VALUES (?,?,?,?,?)", (company, email, int(gb), "owner", now())).lastrowid
             db().execute("INSERT INTO users (name, email, password_hash, role, created_at, company_id) "
                          "VALUES (?,?,?,?,?,?)", (name, email, generate_password_hash(pw), "manager", now(), new_cid))
+            if form.get("demo") == "on":
+                extras.start_trial(db(), new_cid)   # locks on its own after 14 days
             db().commit()
             flash(f"{company} is set up. Send {name} the sign-in address, their email and the temporary password; "
                   f"they'll choose their own password and can then add their team.", "ok")

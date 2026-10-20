@@ -61,11 +61,15 @@ Every signed PDF and audit trail is digitally sealed. If anyone changes the file
 
 **Export to Excel** on the Packets page downloads every packet you can see (or only the ones matching your search, optionally by date created): client, email, mobile, second owner, SO#, sales rep, dates, status, forms and files from the client.
 
-## Free trial (pauses on its own)
+## 14-day demo (locks on its own)
 
-Companies that sign up themselves get a free trial (`TRIAL_DAYS`, default 14). Managers see how many days are left at the top of every page, and get an email 3 days before the end. When the trial ends, the company **pauses on its own**: its team is signed out and can't sign in, and the sign-in page tells them to contact `SUPPORT_EMAIL`. Nothing is deleted, and signing links already sent to clients keep working. You also get an email (`ADMIN_EMAIL`) naming the company.
+Companies that sign up themselves get a 14-day demo (`TRIAL_DAYS`). When you add a company yourself, tick **Start as a 14-day demo** to do the same (it's ticked by default). Managers see the days left at the top of every page and get an email 3 days before the end. When the demo ends, the company **locks on its own**: its team is signed out and can't sign in, and the sign-in page tells them to contact `SUPPORT_EMAIL`. Nothing is deleted, and signing links already sent to clients keep working. You get an email (`ADMIN_EMAIL`) naming the company.
 
-To keep a company on, click **Mark as paid** (on the Companies screen or in the Admin Console). **+7 days trial** gives more time. Turning a paused, ended trial back on also marks it as paid. Companies you add yourself, and companies that existed before this version, are already marked as paid.
+**+14 days demo** (on the Companies screen or in the Admin Console) unlocks the company for another 14 days; you can do this as many times as you like. **Mark as paid** keeps it on for good.
+
+## Invoices (for the platform owner)
+
+The Admin Console has a **Billing** page for every company to record the invoices you send and whether each one has been paid. The invoices are stored in this app's database, are visible only through the Admin Console (never to the company), and count nothing toward the company's storage. `INVOICE_DEFAULT_AMOUNT` (default 185.00) and `INVOICE_CURRENCY` (default CAD) set the amount suggested for a new invoice.
 
 ## Automatic reminders
 
@@ -205,8 +209,9 @@ With email on, you can send packets and reminders from the app, and the client, 
 | `ADMIN_API_TOKEN` | no | Turns on the private API used by the Admin Console (long random value) |
 | `SEAL_P12_BASE64` / `SEAL_P12_PASSWORD` | no | A purchased document-signing certificate (.p12/.pfx, base64-encoded) for sealing PDFs |
 | `SEAL` | no | `0` turns off PDF sealing |
-| `TRIAL_DAYS` | no | Length of the free trial for companies that sign up themselves (default 14) |
-| `SUPPORT_EMAIL` | recommended | Who companies contact to keep using the app after the trial (for example liz@helmmsp.ca) |
+| `TRIAL_DAYS` | no | Length of the demo (default 14) |
+| `INVOICE_DEFAULT_AMOUNT` / `INVOICE_CURRENCY` | no | Suggested amount and currency for new invoices in the Admin Console (default 185.00 CAD) |
+| `SUPPORT_EMAIL` | recommended | Who companies contact to keep using the app after the demo (for example liz@helmmsp.ca) |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | no | Turn on text messages |
 | `REMINDER_CHECK_SECONDS` | no | How often the app checks for reminders and ended trials (default 300) |
 | `STORAGE_CHECK` | no | `0` hides the storage warning; `1` checks even off Render |
