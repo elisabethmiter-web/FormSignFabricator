@@ -30,6 +30,7 @@ import admin_api
 import extras
 import workflow
 import daily
+import support
 import pdfgen
 import seal
 import preview
@@ -246,6 +247,7 @@ def _init_db_locked():
     extras.init_db(conn)  # demo, branding, storage check
     workflow.init_db(conn)  # second owners, client files, bundles, signature boxes
     daily.init_db(conn)  # access codes, last visit, time zones
+    support.init_db(conn)  # support chat with the platform owner
     conn.commit()
     conn.close()
 
@@ -1813,6 +1815,7 @@ admin_api.register(__import__("sys").modules[__name__])
 extras.register(__import__("sys").modules[__name__])
 workflow.register(__import__("sys").modules[__name__])
 daily.register(__import__("sys").modules[__name__])
+support.register(__import__("sys").modules[__name__])
 
 
 if __name__ == "__main__":

@@ -24,11 +24,8 @@
   <form method="post" action="{{ url_for('packet_access_code', pid=p.id) }}" style="margin-left:auto"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="new"><button class="btn btn-quiet small">New code</button></form></div>
 {% endif %}
 {% if state not in ('completed','voided') %}
-{% if request.args.get('compose') %}{% set _qs = quick_message(p) %}
-<div class="flash flash-ok" role="status">Packet ready.
-  {% if _qs.compose_web %}<span id="compose-banner" hidden>Click <strong>✉ Open in {{ _qs.compose_label }}</strong> below: a new email to {{ p.client_name }} opens with the message and link ready.</span>
-  {% else %}Your email is opening with a new message to {{ p.client_name }}, with the link ready. Check it and press Send.{% endif %}
-  {% if p.access_code %} Give the access code separately.{% endif %}</div>
+{% if request.args.get('compose') %}
+<div class="flash flash-ok" role="status" id="compose-banner"><strong>Packet ready.</strong> Click <strong>✉ Open in Email</strong> below: a new email to {{ p.client_name }} opens and the message, with a clickable link to the forms, is copied for you to paste in.{% if p.access_code %} Give the access code separately.{% endif %}</div>
 {% endif %}
 <section class="panel" id="send-panel">
   <div class="panel-head"><h2>Signing link</h2><span class="muted small">Valid until {{ p.expires_at|day }}</span></div>
