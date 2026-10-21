@@ -1328,6 +1328,8 @@ def new_packet():
         if in_person:
             return start_in_person(pid)
         mark_sent(pid, "link")
+        if request.form.get("action") == "email":
+            return redirect(url_for("packet_detail", pid=pid, compose=1))
         flash("Packet ready. Copy the signing link below and send it to your client.", "ok")
         return redirect(url_for("packet_detail", pid=pid))
     pre = [int(x) for x in request.args.getlist("t") if x.isdigit()]

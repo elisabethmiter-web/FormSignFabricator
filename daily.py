@@ -62,9 +62,30 @@ TIMEZONES = [
 ]
 COLUMNS = {
     "packets": {"access_code": "TEXT DEFAULT ''", "last_nudge_at": "TEXT"},
-    "users": {"last_seen_at": "TEXT"},
+    "users": {"last_seen_at": "TEXT", "email_app": "TEXT DEFAULT ''"},
     "companies": {"timezone": "TEXT DEFAULT ''"},
 }
+
+
+# Where "Open in my email" writes the message: the computer's email app, or webmail in a new tab.
+EMAIL_APPS = {
+    "app": ("my email", "The email app on this computer or phone (Outlook, Apple Mail, Thunderbird…)"),
+    "outlook": ("Outlook", "Outlook on the web: work or school (Microsoft 365)"),
+    "gmail": ("Gmail", "Gmail, or Google Workspace"),
+    "outlookcom": ("Outlook.com", "Outlook.com, Hotmail or Live (personal)"),
+}
+
+
+def compose_url(kind, to, subject, body):
+    """A link that opens a new email with everything filled in."""
+    q = urllib.parse.quote
+    if kind == "gmail":
+        return f"https://mail.google.com/mail/?view=cm&fs=1&to={q(to)}&su={q(subject)}&body={q(body)}"
+    if kind == "outlook":
+        return f"https://outlook.office.com/mail/deeplink/compose?to={q(to)}&subject={q(subject)}&body={q(body)}"
+    if kind == "outlookcom":
+        return f"https://outlook.live.com/mail/0/deeplink/compose?to={q(to)}&subject={q(subject)}&body={q(body)}"
+    return f"mailto:{q(to)}?subject={q(subject)}&body={q(body)}"
 
 
 def init_db(conn):
@@ -217,11 +238,43 @@ def register(A):
                  + ("a reminder that your forms are waiting for your signature: " if reminder else
                     "please review and sign your forms here: ") + link + (" (access code given separately)" if p["access_code"] else ""))
         q = urllib.parse.quote
+        choice = email_app()
         return {"subject": subject, "body": body, "short": short, "email": email, "link": link,
-                "mailto": f"mailto:{q(email)}?subject={q(subject)}&body={q(body)}",
+                "mailto": compose_url("app", email, subject, body),
+                "compose": compose_url(choice, email, subject, body), "compose_web": choice != "app",
+                "compose_label": EMAIL_APPS[choice][0], "email_app": choice,
+                "others": [{"key": k, "label": v[0], "url": compose_url(k, email, subject, body)}
+                           for k, v in EMAIL_APPS.items() if k != choice],
                 "sms": f"sms:?&body={q(short)}"}
 
     app.jinja_env.globals["quick_message"] = quick_message
+
+    def email_app():
+        """This person's choice of where emails open (default: the email app on their computer)."""
+        u = g.get("user")
+        if not u:
+            return "app"
+        v = session.get("email_app") if u["id"] == 0 else u.get("email_app")
+        return v if v in EMAIL_APPS else "app"
+
+    app.jinja_env.globals["email_app"] = email_app
+    app.jinja_env.globals["EMAIL_APPS"] = EMAIL_APPS
+
+    @app.route("/account/email-app", methods=["POST"])
+    @A.login_required
+    def set_email_app():
+        """Saved from the Account page, or when someone picks another email from the ▾ menu."""
+        v = request.form.get("email_app", "")
+        if v in EMAIL_APPS:
+            if g.user["id"] == 0:
+                session["email_app"] = v
+            else:
+                db().execute("UPDATE users SET email_app=? WHERE id=?", (v, g.user["id"]))
+                db().commit()
+        if request.form.get("quiet"):
+            return ("", 204)
+        flash(f"Emails will open in {EMAIL_APPS[v][1] if v in EMAIL_APPS else 'your email app'}.", "ok")
+        return redirect(request.form.get("next") or url_for("account"))
 
     @app.route("/packets/<int:pid>/nudge", methods=["POST"])
     @A.login_required
