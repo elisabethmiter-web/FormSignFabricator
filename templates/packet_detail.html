@@ -25,13 +25,14 @@
 {% endif %}
 {% if state not in ('completed','voided') %}
 {% if request.args.get('compose') %}
-<div class="flash flash-ok" role="status"><strong>Packet ready.</strong> A new email to {{ p.client_name }} is opening{% if email_app() != 'app' %} in a new tab{% endif %}, with the message and link written in. Check it and press Send.
-  <span id="compose-banner-wait">If it didn't open, click <strong>✉ Open in Email</strong> below{% if email_app() != 'app' %} (your browser may have blocked the new tab){% endif %}.</span>{% if p.access_code %} Give the access code separately.{% endif %}</div>
+<div class="flash flash-ok" role="status"><strong>Packet ready.</strong> A new email to {{ p.client_name }} is open with the message and link.
+  <strong>To make the link clickable:</strong> click in the message, press <strong>Ctrl+A</strong> then <strong>Ctrl+V</strong> (<strong>⌘A</strong>, <strong>⌘V</strong> on a Mac), then press Send.
+  If the email didn't open, click <strong>✉ Open in Email</strong> below.{% if p.access_code %} Give the access code separately.{% endif %}</div>
 {% endif %}
 <section class="panel" id="send-panel">
   <div class="panel-head"><h2>Signing link</h2><span class="muted small">Valid until {{ p.expires_at|day }}</span></div>
   <p class="muted small">Send it from your own email or phone with the buttons below, or copy it. Anyone with the link can open it, so send it only to your client{{ '' if p.access_code else ' (or turn on an access code)' }}.</p>
-  {% set qs = quick_message(p, None, p.sent_at and events|selectattr('type','equalto','sent')|list|length > 1) %}{% set kind = 'send' %}{% set who = '' %}{% set primary = true %}
+  {% set qs = quick_message(p, None, already_emailed(p.id)) %}{% set kind = 'send' %}{% set who = '' %}{% set primary = true %}
   <div style="margin-bottom:10px">{% include "_quick_send.html" %}</div>
   <div class="linkbox"><input id="signing-link" type="text" readonly value="{{ link }}" aria-label="Signing link">
     <button class="btn btn-primary" type="button" id="copy-link">Copy link</button>

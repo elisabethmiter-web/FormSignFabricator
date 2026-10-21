@@ -47,7 +47,7 @@ try:
 except ImportError:  # pragma: no cover
     ZoneInfo = None
 
-APP_VERSION = "2026.10.21-4"   # shown at the bottom of the Help page, to check which version is live
+APP_VERSION = "2026.10.21-6"   # shown at the bottom of the Help page, to check which version is live
 BACKUP_KEEP = max(1, int(os.environ.get("BACKUP_KEEP", "7")))
 RESTORE_FOLDERS = ("templates", "signed", "client_uploads", "brand", "seal")
 SUPPORT_NAME = os.environ.get("SUPPORT_NAME", "")
@@ -76,6 +76,12 @@ EMAIL_APPS = {
     "gmail": ("Gmail", "Gmail, or Google Workspace"),
     "outlookcom": ("Outlook.com", "Outlook.com, Hotmail or Live (personal)"),
 }
+
+
+def pretty_name(name):
+    """"North_Ridge_Installation_Report.pdf" -> "North Ridge Installation Report" for messages to clients."""
+    n = re.sub(r"\.(pdf|docx?|xlsx?|jpe?g|png|heic)$", "", (name or "").strip(), flags=re.I)
+    return re.sub(r"\s+", " ", n.replace("_", " ")).strip() or (name or "")
 
 
 def compose_url(kind, to, subject, body):
@@ -223,10 +229,12 @@ def register(A):
         forms = [r[0] for r in db().execute("SELECT template_name FROM packet_items WHERE packet_id=? AND requires_signature=1 "
                                             "ORDER BY position", (p["id"],))] or \
             [r[0] for r in db().execute("SELECT template_name FROM packet_items WHERE packet_id=? ORDER BY position", (p["id"],))]
+        forms = [pretty_name(f) for f in forms]
         business = A.biz()
         dl = A.deadline_info(p) if not reminder else {"due_at": None}
         due_text = f"Please complete by {A.fmt_when(dl['due_at'])}." if dl.get("due_at") else ""
         sender = g.user["name"] if g.get("user") and g.user["id"] else business
+        signoff = [sender] if sender.strip().lower() == business.strip().lower() else [sender, business]
         if reminder:
             subject = f"Reminder: your forms from {business} are waiting for your signature"
             intro = f"Just a friendly reminder that {business} is still waiting for you to review and sign:"
@@ -243,7 +251,7 @@ def register(A):
             link_text = f"{business} – {forms[0]}, {forms[1]} and {len(forms) - 2} more"
         body = (f"Hi {first_name(name)},\n\n{intro}\n" + "".join(f"  - {f}\n" for f in forms) +
                 f"\nClick here to open your forms ({link_text}):\n{link}\n" + (f"\n{due_text}\n" if due_text else "") +
-                (f"\n{code_text}\n" if code_text else "") + f"\nThank you,\n{sender}\n{business}\n")
+                (f"\n{code_text}\n" if code_text else "") + "\nThank you,\n" + "\n".join(signoff) + "\n")
         e = escape
         html = (
             f'<div style="font-family:Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1f2937">'
@@ -252,7 +260,7 @@ def register(A):
             f'<p><a href="{e(link)}" style="display:inline-block;background:#1f3a8a;color:#ffffff;text-decoration:none;'
             f'font-weight:600;padding:10px 18px;border-radius:6px">{e(link_text)}</a></p>'
             + (f"<p>{e(due_text)}</p>" if due_text else "") + (f"<p>{e(code_text)}</p>" if code_text else "")
-            + f"<p>Thank you,<br>{e(sender)}<br>{e(business)}</p></div>")
+            + "<p>Thank you,<br>" + "<br>".join(str(e(x)) for x in signoff) + "</p></div>")
         short = (f"{business}: Hi {first_name(name)}, "
                  + ("a reminder that your forms are waiting for your signature: " if reminder else
                     "please review and sign your forms here: ") + link + (" (access code given separately)" if p["access_code"] else ""))
@@ -270,6 +278,13 @@ def register(A):
                 "qr": url_for("text_qr", pid=p["id"], who=signer["id"] if signer else "", kind="reminder" if reminder else "send")}
 
     app.jinja_env.globals["quick_message"] = quick_message
+
+    def already_emailed(pid):
+        """True once the link has been sent from someone's email or phone, so the next message is a reminder."""
+        return bool(db().execute("SELECT 1 FROM events WHERE packet_id=? AND type IN ('sent','reminder') AND "
+                                 "detail LIKE '% via %' LIMIT 1", (pid,)).fetchone())
+
+    app.jinja_env.globals["already_emailed"] = already_emailed
 
     def email_app():
         """This person's choice of where emails open (default: the email app on their computer)."""
@@ -329,7 +344,7 @@ def register(A):
         db().execute("UPDATE packets SET last_nudge_at=? WHERE id=?", (A.now(), pid))
         A.log_event(pid, "sent", f"link for {p['client_name']} via staff member's email · by {A.actor()}")
         db().commit()
-        return jsonify({"url": qs["compose"], "web": qs["compose_web"]})
+        return jsonify({"url": qs["compose"], "web": qs["compose_web"], "html": qs["html"], "text": qs["body"]})
 
     @app.route("/account/email-app", methods=["POST"])
     @A.login_required

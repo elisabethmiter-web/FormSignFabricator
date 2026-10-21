@@ -102,33 +102,47 @@
     <button class="btn btn-primary btn-lg" name="action" value="email" data-web="{{ '0' if email_app() == 'app' else '1' }}" title="Creates the packet and opens a new email to your client with the message and link ready">✉ Create and open in Email</button>
     <button class="btn btn-lg" name="action" value="link">Create signing link</button>
     <button class="btn btn-lg" name="action" value="in_person" title="Your client signs on this device now">Sign now on this device</button>
-    <span class="muted small">Opens your email (Outlook, Apple Mail…) with the message and link written in.</span>
+    <span class="muted small">Opens your email with the message. Then press Ctrl+A, Ctrl+V in it to make the link clickable.</span>
   </div>
 </form>
 {% endblock %}
 {% block scripts %}
 <script>
-// "Create and open in Email" with webmail (Outlook on the web, Gmail): browsers only allow a new tab during the click,
-// so the tab opens now and gets the email once the packet is created.
+// "Create and open in Email": creates the packet, copies the message with a clickable link (browsers only allow that
+// during the click, so it starts now) and opens the email with the message written in.
 (function(){
   const form=document.getElementById('packet-form'), btn=form && form.querySelector('button[value=email]');
-  if(!btn || btn.dataset.web!=='1' || !window.fetch) return;
-  btn.addEventListener('click', async (e)=>{
+  if(!btn || !window.fetch) return;
+  btn.addEventListener('click', (e)=>{
     if(!form.reportValidity()) return;
     e.preventDefault();
-    const w=window.open('', '_blank');
-    if(!w){ submitNormally(); return; }
-    try{ w.document.write('<p style="font:16px system-ui;padding:24px">Opening your email…</p>'); }catch(_){}
-    btn.disabled=true;
+    const web=btn.dataset.web==='1', w=web ? window.open('', '_blank') : null;
+    if(web && !w){ submitNormally(); return; }
+    btn.disabled=true; btn.textContent='Creating…';
     const fd=new FormData(form); fd.append('action','email');
-    try{
+    const job=(async()=>{
       const r=await fetch(form.getAttribute('action')||location.href,{method:'POST',body:fd,credentials:'same-origin'});
       const m=r.redirected && r.url.match(/\/packets\/(\d+)/);
-      if(!m){ w.close(); btn.disabled=false; submitNormally(); return; }
+      if(!m) throw new Error('form');
       const c=await (await fetch('/packets/'+m[1]+'/compose.json',{credentials:'same-origin'})).json();
-      w.location=c.url;
-      location=r.url.replace('compose=1','compose=done');
-    }catch(err){ try{w.close();}catch(_){} btn.disabled=false; submitNormally(); }
+      return {page:r.url, c};
+    })();
+    let copied=Promise.reject(); copied.catch(()=>{});
+    if(navigator.clipboard && window.ClipboardItem){
+      try{
+        copied=navigator.clipboard.write([new ClipboardItem({
+          'text/html': job.then(x=>new Blob([x.c.html],{type:'text/html'})),
+          'text/plain': job.then(x=>new Blob([x.c.text],{type:'text/plain'})) })]);
+        copied.catch(()=>{});
+      }catch(_){}
+    }
+    job.then(async ({page,c})=>{
+      try{ await Promise.race([copied, new Promise(r=>setTimeout(r,1500))]); }catch(_){}
+      let ok=false; try{ await copied; ok=true; }catch(_){}
+      try{ sessionStorage.setItem('fs-copied', ok?'1':'0'); }catch(_){}
+      if(w) w.location=c.url; else location.href=c.url;   // opens the email
+      setTimeout(()=>{ location=page.replace('compose=1','compose=done'); }, w ? 0 : 700);
+    }).catch(()=>{ if(w) try{w.close();}catch(_){}; btn.disabled=false; submitNormally(); });
   });
   function submitNormally(){ const h=document.createElement('input'); h.type='hidden'; h.name='action'; h.value='email'; form.appendChild(h); form.submit(); }
 })();

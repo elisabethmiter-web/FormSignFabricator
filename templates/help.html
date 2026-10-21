@@ -14,9 +14,10 @@
   <ol class="small">
     <li>Click <strong>New packet</strong> and type the client's name: clients you've sent to before are suggested, with their email.</li>
     <li>Tick the forms, or click a <strong>bundle</strong> to tick a set in one go. Add one-off files if needed.{% if has_approvals %} Add the SO# and sales rep for your records.{% endif %}</li>
-    <li>Click <strong>✉ Create and open in Email</strong>. A new email to your client opens by itself, with the subject, the message and the link to the forms already written in. Check it and press <strong>Send</strong>.</li>
+    <li>Click <strong>✉ Create and open in Email</strong>. A new email to your client opens with the subject and message written in.</li>
+    <li><strong>Make the link clickable:</strong> click in the message, press <strong>Ctrl+A</strong> then <strong>Ctrl+V</strong> (<strong>⌘A</strong>, <strong>⌘V</strong> on a Mac). The text is replaced by the same message with a clickable button named after your company and the forms (for example "{{ g.company.name if g.company else 'Your company' }} – Deposit Terms"). Press <strong>Send</strong>. This works in Outlook, Gmail, Yahoo and Apple Mail.</li>
   </ol>
-  <p class="small muted">To send it again later, open the packet and click <strong>✉ Open in Email</strong>. If you use Outlook on the web or Gmail in your browser, pick it from the ▾ next to the button. Want the link as a button named after your company and forms? Click <strong>Copy message</strong> and paste it into an empty email instead.</p>
+  <p class="small muted">To send it again later, open the packet and click <strong>✉ Open in Email</strong>. If you use Outlook on the web or Gmail in your browser, pick it from the ▾ next to the button. <strong>Copy message</strong> copies the clickable version again if you need it.</p>
 </section>
 
 <section class="panel stack help-card" id="text">
