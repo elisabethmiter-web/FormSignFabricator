@@ -31,6 +31,13 @@ import extras
 import workflow
 import daily
 import support
+import everyday
+import board
+import console_api
+import library_plus
+import workspace
+import jobfields
+import upkeep
 import pdfgen
 import seal
 import preview
@@ -248,6 +255,12 @@ def _init_db_locked():
     workflow.init_db(conn)  # second owners, client files, bundles, signature boxes
     daily.init_db(conn)  # access codes, last visit, time zones
     support.init_db(conn)  # support chat with the platform owner
+    everyday.init_db(conn)  # archive, drafts, message wording, announcement
+    console_api.init_db(conn)
+    library_plus.init_db(conn)
+    workspace.init_db(conn)  # team invites, snooze, pop-up choices
+    jobfields.init_db(conn)  # job details on forms, read-this-page / initials
+    upkeep.init_db(conn)  # quick search, installable app, retention rules
     conn.commit()
     conn.close()
 
@@ -882,6 +895,10 @@ def dashboard():
     rep_filter = request.args.get("rep", "").strip()[:80]
     cond, args = packet_scope()
     sql = f"SELECT * FROM packets WHERE {cond}"
+    if request.args.get("show") == "archived":
+        sql += " AND archived_at IS NOT NULL"
+    elif not q:
+        sql += " AND archived_at IS NULL"
     if q:
         like = f"%{q.replace('%', '').replace('_', '')}%"
         sql += (" AND (so_number LIKE ? OR sales_rep LIKE ? OR client_name LIKE ? OR client_email LIKE ?"
@@ -1258,7 +1275,7 @@ def new_packet():
         email = request.form.get("client_email", "").strip()
         ids = [int(x) for x in request.form.getlist("template_ids") if x.isdigit()]
         ids = [i for i in ids if i in {t["id"] for t in templates}]  # only this company's forms
-        extra_problem = validate_packet_extras(request.form)
+        extra_problem = validate_packet_extras(request.form) or jobfields_check(request.form, ids)
         if extra_problem:
             flash(extra_problem, "error")
             return render_template("packet_new.html", templates=templates, form=request.form, selected=ids)
@@ -1324,6 +1341,7 @@ def new_packet():
             parts.append(f"{len(uploads)} one-off file(s)")
         log_event(pid, "created", ", ".join(parts) + (f" · by {actor()}" if actor() else ""))
         after_packet_created(pid)   # second owner, file request, signature boxes
+        jobfields_apply(pid)   # job details printed on the forms, read-this-page settings
         daily_packet_created(pid)   # access code
         db().commit()
         warm_packet(pid)   # prepare previews in the background
@@ -1335,6 +1353,12 @@ def new_packet():
         flash("Packet ready. Copy the signing link below and send it to your client.", "ok")
         return redirect(url_for("packet_detail", pid=pid))
     pre = [int(x) for x in request.args.getlist("t") if x.isdigit()]
+    dup = request.args.get("from", "")
+    if dup.isdigit():   # "Same forms, another client" / "Send again with changes"
+        got = duplicate_prefill(int(dup), request.args.get("same") == "1")
+        if got:
+            got[0].update({k: v for k, v in jobfields_prefill(int(dup)).items() if k not in got[0]})
+            return render_template("packet_new.html", templates=templates, form=got[0], selected=got[1])
     return render_template("packet_new.html", templates=templates, form=packet_form_defaults(),
                            selected=bundle_selection(pre))
 
@@ -1556,6 +1580,7 @@ def render_item_pdf(p, it, answers, signers, method=""):
             "so_number": p["so_number"] or ""}
     if len(signers) > 1:
         meta["signers"] = signers
+    meta.update(jobfields_meta(p, it, answers, signers))   # job details, pages confirmed as read, initials
     source = (os.path.join(UPLOAD_DIR, it["template_file"])
               if it["template_kind"] in ("pdf", "drawing") else None)
     if it["template_kind"] == "file":
@@ -1659,6 +1684,7 @@ def client_form(token, iid):
                 sig_bytes = None
         if not sig_bytes or len(sig_bytes) < 200 or len(sig_bytes) > 2_000_000:
             errors["signature"] = "Draw or type your signature."
+        jobfields_sign_check(it, request.form, 1, answers, errors)   # read-this-page boxes and initials
 
         if not errors:
             ts = now()
@@ -1816,6 +1842,13 @@ extras.register(__import__("sys").modules[__name__])
 workflow.register(__import__("sys").modules[__name__])
 daily.register(__import__("sys").modules[__name__])
 support.register(__import__("sys").modules[__name__])
+everyday.register(__import__("sys").modules[__name__])
+board.register(__import__("sys").modules[__name__])
+console_api.register(__import__("sys").modules[__name__])
+library_plus.register(__import__("sys").modules[__name__])
+workspace.register(__import__("sys").modules[__name__])
+jobfields.register(__import__("sys").modules[__name__])
+upkeep.register(__import__("sys").modules[__name__])
 
 
 if __name__ == "__main__":
