@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Packets{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><span class="eyebrow">{{ 'All packets · every user' if is_manager else 'Your packets' }}</span><h1>Who still needs to sign</h1>
+  {% if not is_manager %}<p class="muted small">Showing packets you created or where you're the sales rep.</p>{% endif %}</div>
+  <details class="export-box"><summary class="btn">Export to Excel</summary>
+    <form method="get" action="{{ url_for('export_packets') }}" class="stack panel" style="gap:8px;position:absolute;right:0;z-index:5;min-width:280px;margin-top:6px">
+      {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}{% if rep %}<input type="hidden" name="rep" value="{{ rep }}">{% endif %}
+      <span class="small muted">{{ 'Packets matching your search' if q or rep else 'All packets you can see' }}, optionally by date created:</span>
+      <div class="grid-2" style="gap:8px"><label class="small">From<input type="date" name="from"></label><label class="small">To<input type="date" name="to"></label></div>
+      <button class="btn btn-primary">Download spreadsheet</button>
+    </form></details>
+</div>
+
+{% set ups = recent_updates() %}
+<section class="panel updates-panel">
+  <div class="panel-head"><h2>New since your last visit{% if ups %} <span class="nav-badge">{{ ups|length }}</span>{% endif %}</h2>
+    <div class="row" style="gap:8px"><button type="button" class="btn btn-quiet small" id="alerts-btn">Turn on desktop alerts</button>
+    {% if ups %}<form method="post" action="{{ url_for('updates_seen') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn small">Mark all as seen</button></form>{% endif %}</div></div>
+  {% if ups %}<ul class="small">{% for e in ups[:8] %}<li><a href="{{ url_for('packet_detail', pid=e.pid) }}">{{ update_text(e) }}</a> <span class="muted">· {{ e.at|when }}</span></li>{% endfor %}</ul>
+  {% if ups|length > 8 %}<p class="muted small" style="margin:4px 0 0">and {{ ups|length - 8 }} more</p>{% endif %}
+  {% else %}<p class="muted small" style="margin:4px 0 0">Nothing new. When a client opens, signs or sends files, it shows here.{% if followup_count %} <a href="{{ url_for('follow_up') }}">{{ followup_count }} packet{{ 's' if followup_count != 1 }} to follow up today →</a>{% endif %}</p>{% endif %}
+</section>
+
+<section class="insights" id="insights" hidden aria-label="Charts">
+  <div class="panel chart-card">
+    <div class="panel-head"><h2>Where packets are</h2></div>
+    <div id="chart-status" class="db-status"></div>
+    <p class="small muted" style="margin:6px 0 0">Click a row to filter the list. Overdue packets are also counted as awaiting or opened; archived ones aren't counted.</p>
+  </div>
+  <div class="db-kpis">
+    <div class="stat"><span class="eyebrow">Typical time to sign</span><strong id="kpi-median">—</strong><span class="muted small">median, from sent to fully signed</span></div>
+    <div class="stat"><span class="eyebrow">Signed within {{ sign_hours }} h</span><strong id="kpi-within">—</strong><span class="muted small" id="kpi-sub"></span></div>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat"><span class="eyebrow">Awaiting client</span><strong>{{ counts.awaiting }}</strong><span class="muted small">sent, not opened yet</span></div>
+  <div class="stat"><span class="eyebrow">Opened, in progress</span><strong>{{ counts.viewed }}</strong><span class="muted small">client has the link open</span></div>
+  <div class="stat"><span class="eyebrow">Completed</span><strong>{{ counts.completed }}</strong><span class="muted small">every form signed</span></div>
+  <a class="stat stat-overdue {{ 'has' if counts.overdue }}" href="?show=overdue"><span class="eyebrow">Overdue</span><strong>{{ counts.overdue }}</strong><span class="muted small">not done within {{ sign_hours }} h</span></a>
+</div>
+
+<section class="panel" id="board" data-edition="fab" data-manager="{{ '1' if is_manager else '0' }}" data-json="{{ url_for('dashboard_json') }}" data-quick="{{ url_for('packet_quick', pid=0) }}" data-preview="{{ url_for('packet_preview', pid=0) }}" data-bulk="{{ url_for('packets_bulk') }}" data-export="{{ url_for('export_packets') }}">
+  <form class="search-bar" method="get" role="search">
+    <input type="hidden" name="show" value="{{ show }}">
+    <label for="q" class="search-q"><span class="sr-only">Search</span>
+      <input id="q" type="search" name="q" value="{{ q }}" placeholder="Search SO#, client name or email, sales rep"></label>
+    <label for="rep" class="search-rep"><span class="sr-only">Sales rep</span>
+      <select id="rep" name="rep" onchange="this.form.submit()"><option value="">All sales reps</option>
+      {% for r in reps %}<option value="{{ r }}" {{ 'selected' if r==rep }}>{{ r }}</option>{% endfor %}</select></label>
+    <button class="btn">Search</button>
+    {% if q or rep %}<a class="btn btn-quiet" href="?show={{ show }}">Clear</a>{% endif %}
+  </form>
+  <div class="panel-head">
+    <div class="tabs">
+      {% set extra = ('&q=' ~ q|urlencode if q else '') ~ ('&rep=' ~ rep|urlencode if rep else '') %}
+      <a href="?show=all{{ extra }}" class="{{ 'active' if show=='all' }}">All</a>
+      <a href="?show=open{{ extra }}" class="{{ 'active' if show=='open' }}">Open</a>
+      <a href="?show=awaiting{{ extra }}" class="{{ 'active' if show=='awaiting' }}">Awaiting client</a>
+      <a href="?show=overdue{{ extra }}" class="{{ 'active' if show=='overdue' }} tab-overdue">Overdue{% if counts.overdue %} ({{ counts.overdue }}){% endif %}</a>
+      <a href="?show=completed{{ extra }}" class="{{ 'active' if show=='completed' }}">Completed</a>
+      <a href="?show=archived{{ extra }}" class="{{ 'active' if show=='archived' }}">Archived</a>
+    </div>
+    {% if q or rep %}<span class="muted small">{{ packets|length }} result{{ 's' if packets|length!=1 }}{% if q %} for “{{ q }}”{% endif %}{% if rep %} · {{ rep }}{% endif %}</span>{% endif %}
+  </div>
+  {% if show in ('completed','archived') and not q %}
+  <form method="post" action="{{ url_for('archive_old') }}" class="row archive-old" style="gap:8px;align-items:center;margin:4px 0 12px">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <span class="small muted">{{ 'Archived packets are hidden from the other tabs; a search still finds them. Open one and use More ▾ to bring it back.' if show == 'archived' else 'Tidy up:' }}</span>
+    {% if show == 'completed' %}<button class="btn small" name="days" value="30">Archive signed and cancelled packets older than 30 days</button>{% endif %}
+  </form>
+  {% endif %}
+  {% if packets %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Client</th><th>SO#</th><th>Sales rep</th><th>Status</th><th>Signed</th><th>Sent / due</th><th>Last follow-up</th></tr></thead>
+    <tbody>
+    {% for p in packets %}
+      <tr class="clickable {{ 'row-overdue' if p.deadline.overdue }}" onclick="location.href='{{ url_for('packet_detail', pid=p.id) }}'">
+        <td><div class="client-cell"><a href="{{ url_for('packet_detail', pid=p.id) }}">{{ p.client_name }}</a><span class="muted small">{{ p.client_email }}</span></div></td>
+        <td class="mono">{{ p.so_number or '—' }}</td>
+        <td class="small">{{ p.sales_rep or '—' }}{% if is_manager and p.created_by and p.created_by != p.sales_rep %}<div class="muted">by {{ p.created_by }}</div>{% endif %}</td>
+        <td><span class="stamp s-{{ p.state }}">{{ {'draft':'Draft','sent':'Sent','viewed':'Opened','in_progress':'In progress','completed':'Signed','expired':'Expired','voided':'Cancelled'}[p.state] }}</span>{% if p.refusals %}<div class="decision neg small" style="margin-top:4px">Changes requested</div>{% endif %}
+          {% if p.missing %}<div class="still-needed" title="{{ p.missing|join(', ') }}"><span>Still needed:</span><ul>{% for m in p.missing[:4] %}<li>{{ m }}</li>{% endfor %}{% if p.missing|length > 4 %}<li>+ {{ p.missing|length - 4 }} more</li>{% endif %}</ul></div>
+          {% elif p.total == 0 and p.state not in ('completed','voided') %}<div class="still-needed"><span>Receipt not confirmed yet</span></div>{% endif %}{% if p.state not in ('completed','voided') %}{% for w in waiting_on(p.id) %}<div><span class="wait-chip">Waiting on {{ w.name }}</span></div>{% endfor %}{% endif %}</td>
+        <td><div class="progress"><div class="bar {{ 'done' if p.signed==p.total }}"><span style="width:{{ (100*p.signed/p.total)|round|int if p.total else 0 }}%"></span></div>{{ p.signed }} of {{ p.total }}</div></td>
+        <td class="small nowrap">{{ p.sent_at|day }}{% if p.deadline.label %}<div class="due {{ 'late' if p.deadline.overdue }}">{{ p.deadline.label }}</div>{% elif p.completed_at %}<div class="muted">Done {{ p.completed_at|day }}</div>{% endif %}</td>
+        <td class="small fu-cell">{% if p.last_fu %}<strong>#{{ p.last_fu.n }}</strong> · {{ p.last_fu.at|day }}{% if p.last_fu.note %}<div class="muted fu-note" title="{{ p.last_fu.note }}">{{ p.last_fu.note|truncate(60) }}</div>{% endif %}{% elif p.deadline.overdue %}<span class="due late">None yet</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <h2>{{ 'No matches' if (q or rep) else ('No packets ' ~ ('here' if show!='all' else 'yet')) }}</h2>
+    {% if q or rep %}
+      <p class="muted">Nothing matches{% if q %} “{{ q }}”{% endif %}{% if rep %} for {{ rep }}{% endif %}. Check the spelling or clear the search.</p>
+      <a class="btn" href="?show={{ show }}">Clear search</a>
+    {% elif not has_templates %}
+      <p class="muted">Start by adding the forms you send to clients: upload your PDFs or build a fillable form. Then bundle them into a packet.</p>
+      <a class="btn btn-primary" href="{{ url_for('library') }}">Add your first form</a>
+    {% else %}
+      <p class="muted">A packet bundles one or more forms for a client. You'll get a signing link to send, and this page tracks who has opened and signed.</p>
+      <a class="btn btn-primary" href="{{ url_for('new_packet') }}">Create a packet</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>{% endblock %}

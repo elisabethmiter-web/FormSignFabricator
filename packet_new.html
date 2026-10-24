@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}New packet{% endblock %}
+{% block content %}
+<div class="page-head"><div><a href="{{ url_for('dashboard') }}" class="small">← Packets</a><h1>New signing packet</h1>
+<p class="muted">Pick saved forms, add one-off files, ask for a stone &amp; seam layout choice, or send a template drawing for approval. The client goes through them in order.</p></div></div>
+{% set rc = recent_clients(6) %}
+{% if rc or bundles %}<div class="np-chips" aria-label="Quick start">
+  {% if rc %}<span class="small muted">Recent clients:</span>{% for c in rc %}<button type="button" class="np-chip" data-client="{{ c.name }}" data-email="{{ c.email }}" title="{{ c.email or 'no email on file' }}">{{ c.name }}</button>{% endfor %}{% endif %}
+  {% if bundles %}<span class="small muted" style="margin-left:8px">Bundles:</span>{% for b in bundles %}<button type="button" class="np-chip" data-bundle="{{ loop.index0 }}" title="{{ b.names|join(', ') }}">📁 {{ b.name }}</button>{% endfor %}{% endif %}
+</div>{% endif %}
+<ol class="np-steps" aria-label="Steps"><li><a href="#step-client" data-step="client">Client</a></li><li><a href="#step-forms" data-step="forms">Forms</a></li><li><a href="#step-options" data-step="options">Options</a></li><li><a href="#step-send" data-step="send">Send</a></li></ol>
+<div class="np-layout">
+<form method="post" class="panel" id="packet-form" enctype="multipart/form-data">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  {% if form.get('_dup_note') %}<div class="flash flash-ok">{{ form.get('_dup_note') }} Check everything, then create the packet.</div>{% endif %}
+
+  <div class="grid-2" id="step-client">
+    <label for="client_name">Client name<input id="client_name" type="text" name="client_name" value="{{ form.get('client_name','') }}" required list="client-list" autocomplete="off"><datalist id="client-list"></datalist></label>
+    <label for="client_email">Client email <span class="hint">Optional, for your records</span><input id="client_email" type="email" name="client_email" value="{{ form.get('client_email','') }}"></label>
+    <label for="so_number">SO# <span class="hint">Sales order number</span><input id="so_number" type="text" name="so_number" value="{{ form.get('so_number','') }}" placeholder="e.g. SO-10482" autocomplete="off"></label>
+    <label for="sales_rep">Sales rep<input id="sales_rep" type="text" name="sales_rep" value="{{ form.get('sales_rep', current_user.name if current_user and current_user.id else '') }}" list="rep-list" autocomplete="off" placeholder="Start typing a name"></label>
+    <datalist id="rep-list">{% for r in sales_reps() %}<option value="{{ r }}">{% endfor %}</datalist>
+  </div>
+  <fieldset class="stack signers-box" style="border:0;padding:0;margin:0;gap:8px">
+    <legend style="font-weight:500;margin-bottom:8px">Who signs?</legend>
+    <div class="row" style="gap:18px">
+      <label class="check"><input type="radio" name="signers" value="1" {{ 'checked' if form.get('signers','1') != '2' }}> One client signs</label>
+      <label class="check"><input type="radio" name="signers" value="2" {{ 'checked' if form.get('signers') == '2' }}> Two owners must both sign</label>
+    </div>
+    <div class="grid-2" id="cosigner-fields" {{ '' if form.get('signers') == '2' else 'hidden' }}>
+      <label for="cosigner_name">Second owner's name<input id="cosigner_name" type="text" name="cosigner_name" value="{{ form.get('cosigner_name','') }}" autocomplete="off"></label>
+      <label for="cosigner_email">Second owner's email<input id="cosigner_email" type="email" name="cosigner_email" value="{{ form.get('cosigner_email','') }}" autocomplete="off"></label>
+      <p class="muted small" style="align-self:end;margin:0">Each owner gets their own link, which you copy and send them. The second owner signs each form after the first, and the packet completes when both have signed.</p>
+    </div>
+  </fieldset>
+  <fieldset class="stack" style="border:0;padding:0;margin:0;gap:8px" id="step-forms">
+    <legend style="font-weight:500;margin-bottom:8px">Forms to include</legend>
+    {% set bundles = bundles_for(current_company_id()) %}
+    {% if bundles %}<div class="row bundle-row" style="gap:8px;align-items:center"><span class="muted small">Start from a bundle:</span>
+      {% for b in bundles %}<button type="button" class="btn small bundle-btn" data-ids="{{ b.ids|join(',') }}" title="{{ b.names|join(', ') }}">{{ b.name }}</button>{% endfor %}</div>{% endif %}
+    <div class="picker" id="picker">
+    {% if not templates %}<p class="muted small">Your library is empty. <a href="{{ url_for('library') }}">Add forms you reuse</a>, or use one-off files and approvals below.</p>{% endif %}
+    {% for t in templates %}
+      <label class="pick"><input type="checkbox" name="template_ids" value="{{ t.id }}" {{ 'checked' if t.id in selected }}>
+        <span><strong style="font-weight:600">{{ t.name }}</strong><br><span class="muted small">{{ t.file_name|filetype if t.kind in ('pdf','file') and t.file_name else {'pdf':'PDF document','file':'File','form':'Fillable form','specs':'Room-by-room spec form','layout':'Stone & seam layout','drawing':'Template drawing'}[t.kind] }}</span></span>
+        <span class="order"></span></label>
+    {% endfor %}
+    </div>
+  </fieldset>
+  <div class="stack adhoc" style="gap:8px">
+    <div class="stack" style="gap:2px"><strong style="font-weight:500">One-off files <span class="hint">Optional</span></strong>
+      <span class="muted small">Files just for this client: quotes, drawings, photos, spreadsheets, any type. They're sent with this packet only and not saved to your library. Up to 50 MB in total.</span></div>
+    <label class="dropzone" for="adhoc_files" id="adhoc-drop">
+      <span><strong>Drop files here</strong> or click to choose</span>
+      <input id="adhoc_files" type="file" name="adhoc_files" multiple>
+    </label>
+    <div id="adhoc-list" class="adhoc-list"></div>
+  </div>
+  <div class="stack approvals approval-section" style="gap:10px">
+    <div class="stack" style="gap:2px"><strong style="font-weight:500">Stone &amp; seam layout <span class="hint">Optional</span></strong>
+      <span class="muted small">The client chooses between two layouts (Option A or B) or refuses both. The pictures are for this packet only.</span></div>
+    <div id="layout-list" class="stack approval-list" style="gap:10px"></div>
+    <div><button type="button" class="btn" id="add-layout">+ Add layout approval (Option A / B)</button></div>
+  </div>
+  <div class="stack approvals approval-section" style="gap:10px">
+    <div class="stack" style="gap:2px"><strong style="font-weight:500">Template drawing (revisions) <span class="hint">Optional</span></strong>
+      <span class="muted small">Send the template drawing for approval. Each time you send an updated drawing, give it the next revision (Rev 1, Rev 2…) and say what changed. The client approves it or requests changes.</span></div>
+    <div id="drawing-list" class="stack approval-list" style="gap:10px"></div>
+    <div><button type="button" class="btn" id="add-drawing">+ Add template drawing (PDF)</button></div>
+  </div>
+  <template id="tpl-layout">
+    <fieldset class="approval-card" data-kind="layout">
+      <legend><span class="tag tag-layout">Stone &amp; seam layout</span></legend>
+      <input type="hidden" name="layout_ids" value="__N__">
+      <label for="layout_title___N__">Title <span class="hint">What the client sees</span><input id="layout_title___N__" type="text" name="layout_title___N__" value="Stone & seam layout approval"></label>
+      <div class="grid-2">
+        <label class="option-drop" for="layout_a___N__"><span>Option A picture</span><input id="layout_a___N__" type="file" name="layout_a___N__" accept="image/png,image/jpeg,image/webp,image/gif" required><img alt="" hidden></label>
+        <label class="option-drop" for="layout_b___N__"><span>Option B picture</span><input id="layout_b___N__" type="file" name="layout_b___N__" accept="image/png,image/jpeg,image/webp,image/gif" required><img alt="" hidden></label>
+      </div>
+      <label for="layout_notes___N__">Notes for the client <span class="hint">Optional: e.g. seam positions, slab numbers, what differs between A and B</span><textarea id="layout_notes___N__" name="layout_notes___N__" rows="2"></textarea></label>
+      <div><button type="button" class="btn btn-quiet btn-danger small remove-approval">Remove</button></div>
+    </fieldset>
+  </template>
+  <template id="tpl-drawing">
+    <fieldset class="approval-card" data-kind="drawing">
+      <legend><span class="tag tag-drawing">Template drawing</span></legend>
+      <input type="hidden" name="drawing_ids" value="__N__">
+      <div class="grid-2">
+        <label for="drawing_title___N__">Title <span class="hint">What the client sees</span><input id="drawing_title___N__" type="text" name="drawing_title___N__" value="Template drawing approval"></label>
+        <label for="drawing_rev___N__">Revision <span class="hint">e.g. Rev 1 for the first drawing, Rev 2 for the next</span><input id="drawing_rev___N__" type="text" name="drawing_rev___N__" placeholder="Rev 1"></label>
+      </div>
+      <label for="drawing_file___N__">Template drawing (PDF)<input id="drawing_file___N__" type="file" name="drawing_file___N__" accept="application/pdf" required></label>
+      <label for="drawing_changes___N__">What changed in this revision <span class="hint">Shown to the client above the drawing. Leave empty for the first drawing.</span><textarea id="drawing_changes___N__" name="drawing_changes___N__" rows="3" placeholder="e.g. Moved sink 4&quot; left, added 1.5&quot; overhang on island"></textarea></label>
+      <div><button type="button" class="btn btn-quiet btn-danger small remove-approval">Remove</button></div>
+    </fieldset>
+  </template>
+  {% set jd = job_details_for(templates) %}
+  {% if jd.fields or jd.builtins %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='jobfields.css') }}">
+  <fieldset class="stack jd-section" id="step-jobdetails">
+    <legend>Job details</legend>
+    <p class="muted small">Printed on the forms where you placed them, so your client sees them on the page.
+      <span class="jd-nojs">Fill in the ones for the forms you ticked above; the others are ignored.</span></p>
+    {% if jd.fields %}<div class="jd-grid">
+    {% for f in jd.fields %}
+      <label class="jd-row" for="{{ f.key }}" data-tids="{{ f.tids|join(' ') }}">
+        <span>{{ f.label }} <span class="hint">{{ 'Default: ' ~ f.default if f.default else 'Required' }}</span></span>
+        <input id="{{ f.key }}" type="text" name="{{ f.key }}" maxlength="200" autocomplete="off" value="{{ form.get(f.key, f.default) }}" data-required="{{ '1' if f.required else '0' }}">
+        <span class="small muted jd-on">On: {{ f.forms|join(', ') }}</span>
+      </label>
+    {% endfor %}
+    </div>{% endif %}
+    {% for b in jd.builtins %}
+    <p class="small muted jd-builtins" data-tids="{{ b.tids|join(' ') }}">{{ b.label }} is printed on {{ b.forms|join(', ') }}: it comes from {{ "the client's name" if b.column == 'client_name' else ('the SO# above' if b.column == 'so_number' else 'the sales rep above') }}.</p>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+  <span id="step-options" class="np-anchor"></span>
+  <label class="check"><input type="checkbox" name="access_code" {{ 'checked' if form.get('access_code') }}> <span><strong style="font-weight:500">Require an access code</strong><br><span class="muted small">The client enters a 4-digit code before seeing the documents. You'll give it to them by phone or in person.</span></span></label>
+  <fieldset class="stack" style="border:0;padding:0;margin:0;gap:8px">
+    <label class="check"><input type="checkbox" name="ask_files" id="ask_files" {{ 'checked' if form.get('ask_files') }}> <span><strong style="font-weight:500">Ask the client for photos or files</strong><br><span class="muted small">They can add them from their phone or computer while signing. Optional for the client.</span></span></label>
+    <div class="stack" id="ask-files-fields" style="gap:8px" {{ '' if form.get('ask_files') else 'hidden' }}>
+      <label for="upload_request">What should they send?<input id="upload_request" type="text" name="upload_request" maxlength="500" value="{{ form.get('upload_request','') }}" placeholder="e.g. Photos of your sink and faucet model numbers, and the cabinet layout"></label>
+    </div>
+  </fieldset>
+  <label for="message">Note to your client <span class="hint">Optional. Shown on the signing page.</span>
+    <textarea id="message" name="message" rows="3" placeholder="Hi Sam, here are the onboarding documents we discussed.">{{ form.get('message','') }}</textarea></label>
+  <label for="expiry_days" style="max-width:260px">Link expires after
+    <select id="expiry_days" name="expiry_days">{% for d in (7,14,30,60,90) %}<option value="{{ d }}" {{ 'selected' if d==30 }}>{{ d }} days</option>{% endfor %}</select></label>
+  <div class="row" id="step-send">
+    <button class="btn btn-primary btn-lg" name="action" value="email" data-web="{{ '0' if email_app() == 'app' else '1' }}" title="Creates the packet and opens a new email to your client with the message and link ready">✉ Create and open in Email</button>
+    <button class="btn btn-lg" name="action" value="link">Create signing link</button>
+    <button class="btn btn-lg" name="action" value="in_person" title="Your client signs on this device now">Sign now on this device</button>
+    <span class="muted small">Opens your email with the message. Then press Ctrl+A, Ctrl+V in it to make the link clickable.</span>
+  </div>
+</form>
+<aside class="np-summary" id="np-summary" aria-live="polite" hidden>
+  <h2>Summary</h2>
+  <dl>
+    <div><dt>Client</dt><dd id="sum-client"></dd></div>
+    <div><dt>Forms and files</dt><dd id="sum-forms"></dd></div>
+    <div><dt>Options</dt><dd id="sum-options"></dd></div>
+  </dl>
+  <p class="small np-miss" id="sum-missing" style="margin:0"></p>
+</aside>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='newpacket.js') }}" defer></script>
+<script src="{{ url_for('static', filename='jobfields.js') }}" defer></script>
+<script>
+// "Create and open in Email": creates the packet, copies the message with a clickable link (browsers only allow that
+// during the click, so it starts now) and opens the email with the message written in.
+(function(){
+  const form=document.getElementById('packet-form'), btn=form && form.querySelector('button[value=email]');
+  if(!btn || !window.fetch) return;
+  btn.addEventListener('click', (e)=>{
+    if(!form.reportValidity()) return;
+    e.preventDefault();
+    const web=btn.dataset.web==='1', w=web ? window.open('', '_blank') : null;
+    if(web && !w){ submitNormally(); return; }
+    btn.disabled=true; btn.textContent='Creating…';
+    const fd=new FormData(form); fd.append('action','email');
+    const job=(async()=>{
+      const r=await fetch(form.getAttribute('action')||location.href,{method:'POST',body:fd,credentials:'same-origin'});
+      const m=r.redirected && r.url.match(/\/packets\/(\d+)/);
+      if(!m) throw new Error('form');
+      const c=await (await fetch('/packets/'+m[1]+'/compose.json',{credentials:'same-origin'})).json();
+      return {page:r.url, c};
+    })();
+    let copied=Promise.reject(); copied.catch(()=>{});
+    if(navigator.clipboard && window.ClipboardItem){
+      try{
+        copied=navigator.clipboard.write([new ClipboardItem({
+          'text/html': job.then(x=>new Blob([x.c.html],{type:'text/html'})),
+          'text/plain': job.then(x=>new Blob([x.c.text],{type:'text/plain'})) })]);
+        copied.catch(()=>{});
+      }catch(_){}
+    }
+    job.then(async ({page,c})=>{
+      try{ await Promise.race([copied, new Promise(r=>setTimeout(r,1500))]); }catch(_){}
+      let ok=false; try{ await copied; ok=true; }catch(_){}
+      try{ sessionStorage.setItem('fs-copied', ok?'1':'0'); }catch(_){}
+      if(w) w.location=c.url; else location.href=c.url;   // opens the email
+      setTimeout(()=>{ location=page.replace('compose=1','compose=done'); }, w ? 0 : 700);
+    }).catch(()=>{ if(w) try{w.close();}catch(_){}; btn.disabled=false; submitNormally(); });
+  });
+  function submitNormally(){ const h=document.createElement('input'); h.type='hidden'; h.name='action'; h.value='email'; form.appendChild(h); form.submit(); }
+})();
+</script>
+<script>
+(function(){
+  const name=document.getElementById('client_name'), email=document.getElementById('client_email'), list=document.getElementById('client-list');
+  let found={}, timer=null;
+  name.addEventListener('input',()=>{
+    if(found[name.value] && !email.value){ email.value=found[name.value]; return; }
+    clearTimeout(timer); const q=name.value.trim(); if(q.length<2) return;
+    timer=setTimeout(async()=>{ try{ const r=await fetch('{{ url_for('clients_json') }}?q='+encodeURIComponent(q)); const rows=await r.json();
+      list.innerHTML=''; found={}; rows.forEach(c=>{ found[c.name]=c.email; const o=document.createElement('option'); o.value=c.name; o.label=c.email||''; list.appendChild(o); });
+    }catch(e){} },250);
+  });
+  name.addEventListener('change',()=>{ if(found[name.value] && !email.value) email.value=found[name.value]; });
+})();
+</script>
+<script>
+(function(){
+  const box=document.getElementById('cosigner-fields');
+  document.querySelectorAll('input[name=signers]').forEach(r=>r.addEventListener('change',()=>{
+    box.hidden = document.querySelector('input[name=signers]:checked').value!=='2';
+    if(!box.hidden) document.getElementById('cosigner_name').focus(); }));
+  const ask=document.getElementById('ask_files'), af=document.getElementById('ask-files-fields');
+  ask.addEventListener('change',()=>{ af.hidden=!ask.checked; if(ask.checked) document.getElementById('upload_request').focus(); });
+  document.querySelectorAll('.bundle-btn').forEach(b=>b.addEventListener('click',()=>{
+    const ids=b.dataset.ids.split(',');
+    document.querySelectorAll('input[name=template_ids]').forEach(c=>{
+      const want=ids.includes(c.value); if(c.checked!==want){ c.checked=want; c.dispatchEvent(new Event('change',{bubbles:true})); } });
+    document.querySelectorAll('.bundle-btn').forEach(x=>x.classList.toggle('btn-primary', x===b));
+  }));
+})();
+</script>
+<script>
+(function(){
+  const lists={layout:document.getElementById('layout-list'), drawing:document.getElementById('drawing-list')};
+  if(!lists.layout) return;
+  let n=0;
+  function add(kind){
+    const list=lists[kind];
+    if(document.querySelectorAll('.approval-card').length>=10) return;
+    const html=document.getElementById('tpl-'+kind).innerHTML.replaceAll('__N__', String(++n));
+    const wrap=document.createElement('div'); wrap.innerHTML=html; const card=wrap.firstElementChild;
+    card.querySelector('.remove-approval').addEventListener('click',()=>card.remove());
+    card.querySelectorAll('.option-drop input').forEach(inp=>inp.addEventListener('change',()=>{
+      const img=inp.parentElement.querySelector('img'); const f=inp.files[0];
+      if(f){img.src=URL.createObjectURL(f); img.hidden=false;} else img.hidden=true;
+    }));
+    list.appendChild(card); card.querySelector('input[type=text]').focus();
+  }
+  document.getElementById('add-layout').addEventListener('click',()=>add('layout'));
+  document.getElementById('add-drawing').addEventListener('click',()=>add('drawing'));
+})();
+</script>
+<script>
+(function(){
+  const inp=document.getElementById('adhoc_files'), list=document.getElementById('adhoc-list'), drop=document.getElementById('adhoc-drop');
+  if(!inp) return;
+  const kb=n=>n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+  function paint(){
+    list.innerHTML='';
+    [...inp.files].forEach((f,i)=>{
+      const row=document.createElement('div'); row.className='adhoc-row';
+      row.innerHTML=`<div class="doc-main"><strong></strong><span class="small muted">${kb(f.size)}</span></div>
+        <label class="check small"><input type="checkbox" name="adhoc_sign_${i}" checked> Client signs this</label>`;
+      row.querySelector('strong').textContent=f.name; list.appendChild(row);
+    });
+    if(inp.files.length){const n=document.createElement('p');n.className='muted small';n.textContent='Untick "Client signs this" for files they only need to receive and download.';list.appendChild(n);}
+  }
+  inp.addEventListener('change',paint);
+  ['dragover','dragenter'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('over');}));
+  ['dragleave','drop'].forEach(t=>drop.addEventListener(t,()=>drop.classList.remove('over')));
+  drop.addEventListener('drop',e=>{e.preventDefault();inp.files=e.dataTransfer.files;paint();});
+})();
+</script>
+<script>
+(function(){
+  const picker=document.getElementById('picker'); if(!picker) return;
+  let order=[...picker.querySelectorAll('input:checked')].map(i=>i.value);
+  function paint(){ picker.querySelectorAll('.pick').forEach(l=>{const i=l.querySelector('input');const n=order.indexOf(i.value);l.querySelector('.order').textContent=n>=0?'#'+(n+1):'';}); }
+  picker.addEventListener('change',e=>{const v=e.target.value; if(e.target.checked) order.push(v); else order=order.filter(x=>x!==v); paint();});
+  document.getElementById('packet-form').addEventListener('submit',e=>{
+    // submit in chosen order
+    const form=e.target; form.querySelectorAll('input[name=template_ids]').forEach(i=>i.disabled=true);
+    order.forEach(v=>{const h=document.createElement('input');h.type='hidden';h.name='template_ids';h.value=v;form.appendChild(h);});
+  });
+  paint();
+})();
+</script>
+{% endblock %}

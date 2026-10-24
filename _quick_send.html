@@ -1,0 +1,15 @@
+{# Buttons that open the staff member's own email or phone with the message ready. Needs: p, qs (quick_message), kind, who #}
+<div class="quick-send" data-nudge="{{ url_for('packet_nudge', pid=p.id) }}" data-kind="{{ kind }}" data-who="{{ who or '' }}" data-setapp="{{ url_for('set_email_app') }}"
+     data-html="{{ qs.html }}" data-text="{{ qs.body }}" data-short="{{ qs.short }}" data-qr="{{ qs.qr }}">
+  <span class="qs-email">
+    <a class="btn {{ 'btn-primary' if primary }}" href="{{ qs.compose }}" data-via="email" data-main="1"{% if qs.compose_web %} target="_blank" rel="noopener"{% endif %} title="Opens a new email to {{ qs.email or 'your client' }} with the message and link written in">✉ Open in Email</a>
+    <details class="qs-more"><summary class="btn {{ 'btn-primary' if primary }}" aria-label="Choose which email opens" title="Choose which email opens">▾</summary>
+      <div class="qs-menu">
+        <span class="small muted">Or open in:</span>
+        {% for o in qs.others %}<a href="{{ o.url }}" data-via="email"{% if o.key != 'app' %} target="_blank" rel="noopener"{% endif %}>{{ EMAIL_APPS[o.key][1] }}</a>{% endfor %}
+        <span class="small muted">Use these if nothing opens when you click Open in Email.</span>
+      </div></details>
+  </span>
+  <a class="btn" href="{{ qs.sms }}" data-via="phone" title="Opens your text messages with the message ready (on a computer: scan a code with your phone)">💬 Text from my phone</a>
+  <button type="button" class="btn btn-quiet" data-via="copy" title="Copies the message with a button-style link named after your company and forms, to paste into any email">Copy message</button>
+</div>
